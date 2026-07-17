@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Provider Messaging Gateway | Interactive Demo</title>
+  <meta name="description" content="Interactive dashboard demonstrating a Node.js 22 SQLite-backed SMS gateway with NexusSMS and OrbitMsg routing, signed webhooks, and delivery polling.">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Ambient background orbs -->
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- ═══════ HERO ═══════ -->
+  <header class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        Node.js 22 &nbsp;•&nbsp; Zero Dependencies &nbsp;•&nbsp; SQLite
+      </div>
+      <h1 class="hero-title">Multi-Provider<br><span class="gradient-text">Messaging Gateway</span></h1>
+      <p class="hero-subtitle">
+        SQLite-backed SMS gateway that routes by <code>sender_id</code>, supports signed webhooks,
+        delivery polling, idempotent dispatch, and full audit trails — all with zero runtime dependencies.
+      </p>
+      <div class="stats-row">
+        <div class="stat-card">
+          <span class="stat-value">5</span>
+          <span class="stat-label">API Endpoints</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">4</span>
+          <span class="stat-label">Sender Routes</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">2</span>
+          <span class="stat-label">Providers</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">26</span>
+          <span class="stat-label">Passing Tests</span>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <a href="#demo" class="btn btn-primary">Try Interactive Demo</a>
+        <a href="#architecture" class="btn btn-ghost">View Architecture</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════ ARCHITECTURE ═══════ -->
+  <section class="section" id="architecture">
+    <div class="container">
+      <h2 class="section-title">System Architecture</h2>
+      <p class="section-desc">Request flows through validation, routing, and provider dispatch with full audit persistence.</p>
+
+      <div class="arch-diagram">
+        <div class="arch-col">
+          <div class="arch-node arch-client">
+            <div class="arch-icon">📱</div>
+            <div class="arch-label">HTTP Client</div>
+          </div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-col">
+          <div class="arch-node arch-router">
+            <div class="arch-icon">🔀</div>
+            <div class="arch-label">HTTP Router</div>
+            <div class="arch-sub">Validation • Body parsing</div>
+          </div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-col">
+          <div class="arch-node arch-gateway">
+            <div class="arch-icon">⚡</div>
+            <div class="arch-label">MessagingGateway</div>
+            <div class="arch-sub">Routing • Idempotency • Failover</div>
+          </div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-col arch-providers">
+          <div class="arch-node arch-nexus">
+            <div class="arch-icon">🟢</div>
+            <div class="arch-label">NexusSMS</div>
+            <div class="arch-sub">Bearer auth • 429 retry</div>
+          </div>
+          <div class="arch-node arch-orbit">
+            <div class="arch-icon">🟣</div>
+            <div class="arch-label">OrbitMsg</div>
+            <div class="arch-sub">API key • Async 202</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-store-row">
+        <div class="arch-store-line"></div>
+        <div class="arch-node arch-store-node">
+          <div class="arch-icon">🗄️</div>
+          <div class="arch-label">SQLite Store</div>
+          <div class="arch-sub">Messages • Attempts • Audits • Webhook receipts</div>
+        </div>
+      </div>
+
+      <!-- Routing Table -->
+      <div class="routing-card">
+        <h3>Routing Table</h3>
+        <table class="routing-table">
+          <thead>
+            <tr><th>Sender ID</th><th>Route</th><th>Behaviour</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>NEXUS01</code> / <code>NEXUS02</code></td><td><span class="badge badge-nexus">nexus</span></td><td>NexusSMS only — Bearer auth, 429 exponential backoff</td></tr>
+            <tr><td><code>ORBIT01</code></td><td><span class="badge badge-orbit">orbit</span></td><td>OrbitMsg only — API key, async 202 acceptance</td></tr>
+            <tr><td><code>AUTO01</code></td><td><span class="badge badge-failover">failover</span></td><td>Nexus first → Orbit exactly once (only on 5xx / timeout)</td></tr>
+            <tr><td>anything else</td><td><span class="badge badge-error">rejected</span></td><td>400 UNKNOWN_SENDER_ID</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ STATE MACHINE ═══════ -->
+  <section class="section section-dark" id="lifecycle">
+    <div class="container">
+      <h2 class="section-title">Delivery Lifecycle</h2>
+      <p class="section-desc">Messages progress through a strict forward-only state machine. Terminal states cannot be overwritten.</p>
+      <div class="state-machine" id="stateMachine">
+        <div class="sm-node sm-accepted" data-state="ACCEPTED">
+          <div class="sm-dot"></div>
+          <span>ACCEPTED</span>
+        </div>
+        <div class="sm-edge sm-edge-1"><div class="sm-edge-line"></div></div>
+        <div class="sm-node sm-submitted" data-state="SUBMITTED">
+          <div class="sm-dot"></div>
+          <span>SUBMITTED</span>
+        </div>
+        <div class="sm-edge sm-edge-2"><div class="sm-edge-line"></div></div>
+        <div class="sm-node sm-sent" data-state="SENT">
+          <div class="sm-dot"></div>
+          <span>SENT</span>
+        </div>
+        <div class="sm-edge sm-edge-3"><div class="sm-edge-line"></div></div>
+        <div class="sm-node sm-delivered" data-state="DELIVERED">
+          <div class="sm-dot"></div>
+          <span>DELIVERED</span>
+        </div>
+        <div class="sm-branch">
+          <div class="sm-branch-line"></div>
+          <div class="sm-node sm-failed" data-state="FAILED">
+            <div class="sm-dot"></div>
+            <span>FAILED</span>
+          </div>
+        </div>
+      </div>
+      <p class="sm-caption" id="smCaption">Send a message to see the lifecycle in action</p>
+    </div>
+  </section>
+
+  <!-- ═══════ INTERACTIVE DEMO ═══════ -->
+  <section class="section" id="demo">
+    <div class="container">
+      <h2 class="section-title">Interactive Demo</h2>
+      <p class="section-desc">Try every API endpoint live. The server is running with simulated providers — no external services needed.</p>
+
+      <div class="demo-layout">
+        <!-- Left: Controls -->
+        <div class="demo-controls">
+          <div class="tab-bar">
+            <button class="tab active" data-tab="send" id="tabSend">
+              <span class="tab-icon">📤</span> Send Message
+            </button>
+            <button class="tab" data-tab="lookup" id="tabLookup">
+              <span class="tab-icon">🔍</span> Lookup
+            </button>
+            <button class="tab" data-tab="webhook" id="tabWebhook">
+              <span class="tab-icon">🔔</span> Webhook
+            </button>
+            <button class="tab" data-tab="poll" id="tabPoll">
+              <span class="tab-icon">🔄</span> DLR Poll
+            </button>
+          </div>
+
+          <!-- Tab: Send Message -->
+          <div class="tab-panel active" id="panel-send">
+            <form id="sendForm" autocomplete="off">
+              <div class="form-group">
+                <label for="clientRef">client_ref</label>
+                <div class="input-row">
+                  <input type="text" id="clientRef" placeholder="msg-001" required>
+                  <button type="button" class="btn btn-sm btn-ghost" id="genRef" title="Generate random ref">🎲</button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="senderId">sender_id</label>
+                <select id="senderId">
+                  <option value="NEXUS01">NEXUS01 — Nexus only</option>
+                  <option value="NEXUS02">NEXUS02 — Nexus only</option>
+                  <option value="ORBIT01">ORBIT01 — Orbit only</option>
+                  <option value="AUTO01">AUTO01 — Failover (Nexus → Orbit)</option>
+                </select>
+                <div class="route-hint" id="routeHint">
+                  <span class="badge badge-nexus">nexus</span> Routes exclusively to NexusSMS with Bearer auth
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="destination">destination</label>
+                <input type="text" id="destination" value="+14155550100" required>
+              </div>
+              <div class="form-group">
+                <label for="msgText">text</label>
+                <textarea id="msgText" rows="2" placeholder="Hello from the gateway!" required>Hello from the gateway demo!</textarea>
+                <span class="char-count"><span id="charCount">0</span>/1600</span>
+              </div>
+              <button type="submit" class="btn btn-primary btn-block" id="sendBtn">
+                <span class="btn-text">Send Message</span>
+                <span class="btn-loader" hidden></span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Tab: Lookup -->
+          <div class="tab-panel" id="panel-lookup">
+            <form id="lookupForm" autocomplete="off">
+              <div class="form-group">
+                <label for="lookupRef">client_ref</label>
+                <input type="text" id="lookupRef" placeholder="Enter client_ref to look up" required>
+                <div class="recent-refs" id="recentRefs">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary btn-block" id="lookupBtn">
+                <span class="btn-text">Lookup Message</span>
+                <span class="btn-loader" hidden></span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Tab: Webhook -->
+          <div class="tab-panel" id="panel-webhook">
+            <div class="info-callout">
+              <strong>Nexus Delivery Webhook</strong><br>
+              Simulates a signed <code>POST /webhooks/nexus/status</code> callback. The HMAC-SHA256 signature is computed automatically using the dev secret.
+            </div>
+            <form id="webhookForm" autocomplete="off">
+              <div class="form-group">
+                <label for="whMsgId">provider_message_id</label>
+                <input type="text" id="whMsgId" placeholder="nex_..." required>
+                <small class="form-hint">Populated from the last Nexus send</small>
+              </div>
+              <div class="form-group">
+                <label for="whStatus">status</label>
+                <select id="whStatus">
+                  <option value="delivered">delivered</option>
+                  <option value="sent">sent</option>
+                  <option value="failed">failed</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary btn-block" id="webhookBtn">
+                <span class="btn-text">Send Signed Webhook</span>
+                <span class="btn-loader" hidden></span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Tab: DLR Poll -->
+          <div class="tab-panel" id="panel-poll">
+            <div class="info-callout">
+              <strong>Orbit Delivery Polling</strong><br>
+              Triggers <code>POST /v1/dlr/poll</code> which checks every pending Orbit message for updated delivery status.
+            </div>
+            <button class="btn btn-primary btn-block" id="pollBtn">
+              <span class="btn-text">Poll Orbit Delivery Status</span>
+              <span class="btn-loader" hidden></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: Output -->
+        <div class="demo-output">
+          <div class="output-header">
+            <span class="output-title" id="outputTitle">Response</span>
+            <div class="output-meta">
+              <span class="http-method" id="httpMethod"></span>
+              <span class="http-status" id="httpStatus"></span>
+              <span class="http-time" id="httpTime"></span>
+            </div>
+          </div>
+          <pre class="response-viewer" id="responseViewer"><code class="response-code" id="responseCode">// Send a message to see the API response here</code></pre>
+
+          <!-- Audit Trail -->
+          <div class="audit-section" id="auditSection" hidden>
+            <h4 class="audit-title">Audit Trail</h4>
+            <div class="audit-timeline" id="auditTimeline">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Attempts -->
+          <div class="attempts-section" id="attemptsSection" hidden>
+            <h4 class="audit-title">Provider Attempts</h4>
+            <div class="attempts-list" id="attemptsList">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ FEATURES ═══════ -->
+  <section class="section section-dark" id="features">
+    <div class="container">
+      <h2 class="section-title">Key Features</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3>Idempotency</h3>
+          <p>Unique <code>client_ref</code> primary key with request fingerprinting. Duplicate sends return the stored result; conflicting payloads return <code>409</code>.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>AUTO Failover</h3>
+          <p>AUTO01 tries Nexus first. Only a 5xx or timeout triggers exactly one Orbit attempt. Rate-limit exhaustion is terminal — no failover.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">✍️</div>
+          <h3>HMAC Webhooks</h3>
+          <p>Nexus delivery webhooks are validated with timing-safe HMAC-SHA256. Event IDs provide deduplication — duplicates are acknowledged without state mutation.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Full Audit Trail</h3>
+          <p>Every lifecycle event, provider attempt, failover decision, and status transition is persisted in SQLite with timestamps.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3>Race Safety</h3>
+          <p>In-process single-flight dispatch ensures concurrent identical requests result in exactly one provider call. SQLite transactions guard persistence.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3>Zero Dependencies</h3>
+          <p>Uses only Node.js 22 built-in modules: <code>node:http</code>, <code>node:sqlite</code>, <code>node:crypto</code>. No <code>node_modules</code> at runtime.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ FOOTER ═══════ -->
+  <footer class="footer">
+    <div class="container">
+      <p>Multi-Provider Messaging Gateway &nbsp;•&nbsp; Built with Node.js 22 &nbsp;•&nbsp; <span id="testCount">26</span> tests passing</p>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

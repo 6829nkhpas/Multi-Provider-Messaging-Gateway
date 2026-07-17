@@ -1,5 +1,22 @@
 import { createHmac, createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { join, extname, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { AppError } from './errors.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = join(__dirname, '..', 'public');
+const MIME_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
+
+function serveStatic(pathname, res) {
+  const safePath = join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
+  if (!safePath.startsWith(PUBLIC_DIR)) return false;
+  if (!existsSync(safePath) || !statSync(safePath).isFile()) return false;
+  const content = readFileSync(safePath);
+  res.writeHead(200, { 'content-type': MIME_TYPES[extname(safePath)] || 'application/octet-stream', 'content-length': content.length, 'cache-control': 'no-cache' });
+  res.end(content);
+  return true;
+}
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -50,6 +67,9 @@ export function createHttpHandler({ gateway, nexusWebhookSecret, logger }) {
       }
       if (req.method === 'GET' && url.pathname === '/health') {
         return respond(200, { ok: true });
+      }
+      if (req.method === 'GET' && serveStatic(url.pathname, res)) {
+        statusCode = 200; return;
       }
       throw new AppError(404, 'NOT_FOUND', 'Route not found.');
     } catch (error) {
