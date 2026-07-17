@@ -1,0 +1,47 @@
+{
+  "info": {
+    "name": "Multi-Provider Messaging Gateway",
+    "description": "Happy and validation-failure API calls. Set baseUrl to the running gateway.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" }
+  ],
+  "item": [
+    {
+      "name": "Create Nexus message",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/messages",
+        "body": { "mode": "raw", "raw": "{\n  \"client_ref\": \"postman-nexus-1\",\n  \"sender_id\": \"NEXUS01\",\n  \"channel\": \"sms\",\n  \"destination\": \"+14155550100\",\n  \"text\": \"Hello from Postman\"\n}" }
+      }
+    },
+    {
+      "name": "Create Orbit message",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/messages",
+        "body": { "mode": "raw", "raw": "{\n  \"client_ref\": \"postman-orbit-1\",\n  \"sender_id\": \"ORBIT01\",\n  \"channel\": \"sms\",\n  \"destination\": \"+14155550100\",\n  \"text\": \"Hello from Postman\"\n}" }
+      }
+    },
+    {
+      "name": "Poll Orbit DLR",
+      "request": { "method": "POST", "url": "{{baseUrl}}/v1/dlr/poll" }
+    },
+    {
+      "name": "Get message",
+      "request": { "method": "GET", "url": "{{baseUrl}}/v1/messages/postman-nexus-1" }
+    },
+    {
+      "name": "Validation failure - unknown sender",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/messages",
+        "body": { "mode": "raw", "raw": "{\n  \"client_ref\": \"postman-error-1\",\n  \"sender_id\": \"UNKNOWN\",\n  \"channel\": \"sms\",\n  \"destination\": \"+14155550100\",\n  \"text\": \"Hi\"\n}" }
+      }
+    }
+  ]
+}

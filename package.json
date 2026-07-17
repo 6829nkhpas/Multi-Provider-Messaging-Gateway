@@ -1,0 +1,15 @@
+{
+  "name": "multi-provider-messaging-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SQLite-backed SMS gateway with NexusSMS and OrbitMsg routing.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --no-warnings --test",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
