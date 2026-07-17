@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Multi-Provider Messaging Gateway",
-    "description": "Happy and validation-failure API calls. Set baseUrl to the running gateway.",
+    "description": "Happy and failure-path API calls. Set baseUrl to the running gateway; run Create Nexus message before the idempotency-conflict request.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -41,6 +41,36 @@
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "url": "{{baseUrl}}/v1/messages",
         "body": { "mode": "raw", "raw": "{\n  \"client_ref\": \"postman-error-1\",\n  \"sender_id\": \"UNKNOWN\",\n  \"channel\": \"sms\",\n  \"destination\": \"+14155550100\",\n  \"text\": \"Hi\"\n}" }
+      }
+    },
+    {
+      "name": "Validation failure - malformed E.164",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/messages",
+        "body": { "mode": "raw", "raw": "{\n  \"client_ref\": \"postman-bad-number-1\",\n  \"sender_id\": \"NEXUS01\",\n  \"channel\": \"sms\",\n  \"destination\": \"4155550100\",\n  \"text\": \"Hi\"\n}" }
+      }
+    },
+    {
+      "name": "Idempotency failure - changed payload",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/messages",
+        "body": { "mode": "raw", "raw": "{\n  \"client_ref\": \"postman-nexus-1\",\n  \"sender_id\": \"NEXUS01\",\n  \"channel\": \"sms\",\n  \"destination\": \"+14155550100\",\n  \"text\": \"Changed text causes 409\"\n}" }
+      }
+    },
+    {
+      "name": "Webhook failure - invalid signature",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Nexus-Signature", "value": "sha256=not-a-valid-signature" }
+        ],
+        "url": "{{baseUrl}}/webhooks/nexus/status",
+        "body": { "mode": "raw", "raw": "{\n  \"message_id\": \"nex_example\",\n  \"status\": \"delivered\"\n}" }
       }
     }
   ]
