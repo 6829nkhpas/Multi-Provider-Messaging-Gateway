@@ -25,12 +25,15 @@ server.listen(config.port, () => {
   poller.start();
 });
 
-function shutdown() {
+function shutdown(signal) {
+  logger.info('server_shutdown_started', { signal });
   poller.stop();
   server.close(() => {
     store.close();
+    logger.info('server_shutdown_completed', { signal });
     process.exit(0);
   });
 }
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+server.on('error', (error) => logger.error('server_error', { error }));
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));

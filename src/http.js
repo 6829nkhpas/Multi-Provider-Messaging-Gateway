@@ -1,4 +1,4 @@
-import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
+import { createHmac, createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { AppError } from './errors.js';
 
 const MAX_BODY_BYTES = 1_048_576;
@@ -6,18 +6,30 @@ const MAX_BODY_BYTES = 1_048_576;
 export function createHttpHandler({ gateway, nexusWebhookSecret, logger }) {
   return async function handler(req, res) {
     const url = new URL(req.url, 'http://gateway.local');
+    const requestId = randomUUID();
+    const startedAt = process.hrtime.bigint();
+    let clientRef = null;
+    let statusCode = 500;
+    const respond = (status, body) => {
+      statusCode = status;
+      return sendJson(res, status, body);
+    };
+    logger?.debug?.('http_request_started', { request_id: requestId, method: req.method, path: url.pathname });
     try {
       if (req.method === 'POST' && url.pathname === '/v1/messages') {
         const body = await readBody(req);
-        const result = await gateway.submit(parseJson(body));
-        return sendJson(res, 200, result);
+        const payload = parseJson(body);
+        clientRef = typeof payload?.client_ref === 'string' ? payload.client_ref : null;
+        const result = await gateway.submit(payload);
+        clientRef = result.client_ref;
+        return respond(200, result);
       }
       if (req.method === 'GET' && url.pathname.startsWith('/v1/messages/')) {
-        const clientRef = decodeURIComponent(url.pathname.slice('/v1/messages/'.length));
+        clientRef = decodeURIComponent(url.pathname.slice('/v1/messages/'.length));
         if (!clientRef) throw new AppError(400, 'INVALID_CLIENT_REF', 'client_ref is required.');
         const message = gateway.store.getMessage(clientRef);
         if (!message) throw new AppError(404, 'NOT_FOUND', 'No message exists for this client_ref.');
-        return sendJson(res, 200, message);
+        return respond(200, message);
       }
       if (req.method === 'POST' && url.pathname === '/webhooks/nexus/status') {
         const rawBody = await readBody(req);
@@ -29,20 +41,32 @@ export function createHttpHandler({ gateway, nexusWebhookSecret, logger }) {
         const suppliedEventId = req.headers['x-nexus-event-id'];
         const eventKey = suppliedEventId ? `nexus:${suppliedEventId}` : `nexus:${createHash('sha256').update(rawBody).digest('hex')}`;
         const result = gateway.receiveNexusStatus(payload, eventKey);
-        return sendJson(res, 200, { ok: true, duplicate: result.duplicate, ignored: result.ignored || false, message: result.message });
+        clientRef = result.message?.client_ref || null;
+        return respond(200, { ok: true, duplicate: result.duplicate, ignored: result.ignored || false, message: result.message });
       }
       if (req.method === 'POST' && url.pathname === '/v1/dlr/poll') {
         const results = await gateway.pollOrbit();
-        return sendJson(res, 200, { polled: results.length, results });
+        return respond(200, { polled: results.length, results });
       }
       if (req.method === 'GET' && url.pathname === '/health') {
-        return sendJson(res, 200, { ok: true });
+        return respond(200, { ok: true });
       }
       throw new AppError(404, 'NOT_FOUND', 'Route not found.');
     } catch (error) {
       const appError = error instanceof AppError ? error : new AppError(500, 'INTERNAL_ERROR', 'Internal server error.');
-      if (!(error instanceof AppError)) logger?.error('http_unhandled_error', { error: error?.message });
-      return sendJson(res, appError.status, { error: { code: appError.code, message: appError.message, ...(appError.details ? { details: appError.details } : {}) } });
+      if (!(error instanceof AppError)) logger?.error('http_unhandled_error', { request_id: requestId, client_ref: clientRef, error });
+      return respond(appError.status, { error: { code: appError.code, message: appError.message, ...(appError.details ? { details: appError.details } : {}) } });
+    } finally {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const completionLevel = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
+      logger?.[completionLevel]?.('http_request_completed', {
+        request_id: requestId,
+        client_ref: clientRef,
+        method: req.method,
+        path: url.pathname,
+        status_code: statusCode,
+        duration_ms: Math.round(durationMs * 100) / 100
+      });
     }
   };
 }

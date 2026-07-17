@@ -150,6 +150,26 @@ Terminal states are not overwritten. Nexus receipt event IDs (or a payload hash 
 
 For `AUTO01`, a confirmed Nexus acceptance stops the workflow immediately. Only a Nexus server error or timeout permits exactly one Orbit attempt; exhausted rate limits and validation/provider rejections do not. Every attempt and decision is stored before the next action, so `GET /v1/messages/{client_ref}` remains an auditable account of what happened.
 
+## Structured logs
+
+The service writes one JSON object per line to standard output. This is directly consumable by production log collectors and avoids putting credentials, message content, or full phone numbers in logs.
+
+Every record includes `timestamp`, `level`, `service`, and `event`. Request-completion records add `request_id`, HTTP method/path, status code, duration, and `client_ref` when known. Message records add the route/provider and use `destination_last4` plus `text_length` instead of sensitive payload data.
+
+```json
+{
+  "timestamp": "2026-07-18T10:15:00.000Z",
+  "level": "info",
+  "service": "messaging-gateway",
+  "event": "provider_submitted",
+  "client_ref": "msg_1",
+  "provider": "nexus",
+  "provider_message_id": "nex_123"
+}
+```
+
+Set `LOG_LEVEL=debug` to include request-start events; the default is `info`. Supported levels are `debug`, `info`, `warn`, and `error`. The logs cover message acceptance/replay, provider attempts/retries/failover, webhook duplication/status handling, polling, HTTP completion/error outcomes, and server lifecycle.
+
 ## Tests
 
 ```powershell

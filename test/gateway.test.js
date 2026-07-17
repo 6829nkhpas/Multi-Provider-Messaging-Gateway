@@ -7,6 +7,7 @@ import { NexusClient } from '../src/providers/nexus.js';
 import { OrbitClient } from '../src/providers/orbit.js';
 import { ProviderError } from '../src/errors.js';
 import { createHttpHandler, signNexusPayload } from '../src/http.js';
+import { createLogger } from '../src/logger.js';
 
 const secret = 'test-nexus-secret';
 
@@ -321,4 +322,40 @@ test('real Orbit HTTP adapter sends API-key header and requires 202', async () =
   assert.equal(captured.url, 'https://orbit.example/messages');
   assert.equal(captured.options.headers['x-api-key'], 'orbit-key');
   assert.equal(captured.options.headers['idempotency-key'], 'orbit_headers');
+});
+
+test('structured logger emits correlation fields and redacts sensitive values', () => {
+  const lines = [];
+  const logger = createLogger({
+    write: (line) => lines.push(line),
+    now: () => '2026-07-18T10:15:00.000Z'
+  }).child({ request_id: 'req_123' });
+  logger.info('message_accepted', {
+    client_ref: 'log_1',
+    destination: '+14155550100',
+    destination_last4: '0100',
+    text: 'private message text',
+    api_key: 'private-key'
+  });
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.timestamp, '2026-07-18T10:15:00.000Z');
+  assert.equal(record.level, 'info');
+  assert.equal(record.service, 'messaging-gateway');
+  assert.equal(record.event, 'message_accepted');
+  assert.equal(record.request_id, 'req_123');
+  assert.equal(record.client_ref, 'log_1');
+  assert.equal(record.destination, '[REDACTED]');
+  assert.equal(record.text, '[REDACTED]');
+  assert.equal(record.api_key, '[REDACTED]');
+  assert.equal(record.destination_last4, '0100');
+});
+
+test('logger honors the configured minimum severity', () => {
+  const lines = [];
+  const logger = createLogger({ write: (line) => lines.push(line), level: 'warn' });
+  logger.info('not_written');
+  logger.warn('written');
+  assert.equal(lines.length, 1);
+  assert.equal(JSON.parse(lines[0]).event, 'written');
+  assert.equal(JSON.parse(lines[0]).level, 'warn');
 });
